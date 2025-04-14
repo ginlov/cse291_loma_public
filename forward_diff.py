@@ -122,18 +122,11 @@ def forward_diff(diff_func_id : str,
                                 return struct.args[0]
                             else:
                                 return loma_ir.ConstFloat(0.0)
-                        case 'make__dfloat':
-                            if node.member_id == 'val':
-                                return struct.args[0]
-                            elif node.member_id == 'dval':
-                                return struct.args[1]
                 case loma_ir.ConstInt():
                     if node.member_id == 'val':
                         return loma_ir.Call('int2float', [struct])
                     else:
                         return loma_ir.ConstFloat(0.0)
-                case loma_ir.Var():
-                    return struct
             return super().mutate_struct_access(node)
 
         def mutate_add(self, node):
