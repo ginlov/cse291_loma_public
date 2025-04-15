@@ -102,14 +102,16 @@ def forward_diff(diff_func_id : str,
         
         def mutate_const_int(self, node):
             # HW1: TODO
-            return super().mutate_const_int(node)
-
+            return node
+        
         def mutate_var(self, node):
             return super().mutate_var(node)
 
         def mutate_array_access(self, node):
             # HW1: TODO
-            return super().mutate_array_access(node)
+            new_array = self.mutate_expr(node.array)
+            new_index = self.mutate_expr(node.index)
+            return loma_ir.ArrayAccess(new_array, new_index)
 
         def mutate_struct_access(self, node):
             # HW1: TODO
@@ -117,17 +119,21 @@ def forward_diff(diff_func_id : str,
             match struct:
                 case loma_ir.Call():
                     match struct.id:
-                        case 'int2float':
-                            if node.member_id == 'val':
-                                return struct.args[0]
-                            else:
-                                return loma_ir.ConstFloat(0.0)
+                        case 'float2int':
+                            return struct
+                case loma_ir.Var():
+                    match struct.t:
+                        case loma_ir.Int():
+                            return struct
                 case loma_ir.ConstInt():
-                    if node.member_id == 'val':
-                        return loma_ir.Call('int2float', [struct])
-                    else:
-                        return loma_ir.ConstFloat(0.0)
-            return super().mutate_struct_access(node)
+                    return struct
+
+            return loma_ir.StructAccess(
+                struct,
+                node.member_id,
+                node.lineno,
+                node.t
+            )
 
         def mutate_add(self, node):
             # HW1: TODO
@@ -140,16 +146,20 @@ def forward_diff(diff_func_id : str,
             ret_val = loma_ir.BinaryOp(
                 loma_ir.Add(),
                 left_val,
-                right_val,
-                lineno = node.lineno,
-                t = loma_ir.Float())
+                right_val)
             ret_dval = loma_ir.BinaryOp(
                 loma_ir.Add(),
                 left_dval,
-                right_dval,
-                lineno = node.lineno,
-                t = loma_ir.Float())
-            return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
+                right_dval)
+            match node.t:
+                case loma_ir.Int():
+                    return ret_val
+                case loma_ir.ConstInt():
+                    return ret_val
+                case loma_ir.ConstFloat():
+                    return loma_ir.Call('make__dfloat', [ret_val, loma_ir.ConstFloat(0)])
+                case _:
+                    return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
 
         def mutate_sub(self, node):
             # HW1: TODO
@@ -162,16 +172,20 @@ def forward_diff(diff_func_id : str,
             ret_val = loma_ir.BinaryOp(
                 loma_ir.Sub(),
                 left_val,
-                right_val,
-                lineno = node.lineno,
-                t = loma_ir.Float())
+                right_val)
             ret_dval = loma_ir.BinaryOp(
                 loma_ir.Sub(),
                 left_dval,
-                right_dval,
-                lineno = node.lineno,
-                t = loma_ir.Float())
-            return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
+                right_dval)
+            match node.t:
+                case loma_ir.Int():
+                    return ret_val
+                case loma_ir.ConstInt():
+                    return ret_val
+                case loma_ir.ConstFloat():
+                    return loma_ir.Call('make__dfloat', [ret_val, loma_ir.ConstFloat(0)])
+                case _:
+                    return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
 
         def mutate_mul(self, node):
             # HW1: TODO
@@ -184,29 +198,29 @@ def forward_diff(diff_func_id : str,
             ret_val = loma_ir.BinaryOp(
                 loma_ir.Mul(),
                 left_val,
-                right_val,
-                lineno = node.lineno,
-                t = loma_ir.Float())
+                right_val)
             ret_dval1 = loma_ir.BinaryOp(
                 loma_ir.Mul(),
                 left_dval,
-                right_val,
-                lineno = node.lineno,
-                t = loma_ir.Float())
+                right_val)
             ret_dval2 = loma_ir.BinaryOp(
                 loma_ir.Mul(),
                 left_val,
-                right_dval,
-                lineno = node.lineno,
-                t = loma_ir.Float())
+                right_dval)
             ret_dval = loma_ir.BinaryOp(
                 loma_ir.Add(),
                 ret_dval1,
-                ret_dval2,
-                lineno=node.lineno,
-                t=loma_ir.Float()
+                ret_dval2
             )
-            return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
+            match node.t:
+                case loma_ir.Int():
+                    return ret_val
+                case loma_ir.ConstInt():
+                    return ret_val
+                case loma_ir.ConstFloat():
+                    return loma_ir.Call('make__dfloat', [ret_val, loma_ir.ConstFloat(0)])
+                case _:
+                    return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
 
         def mutate_div(self, node):
             # HW1: TODO
@@ -219,91 +233,109 @@ def forward_diff(diff_func_id : str,
             ret_val = loma_ir.BinaryOp(
                 loma_ir.Div(),
                 left_val,
-                right_val,
-                lineno = node.lineno,
-                t = loma_ir.Float())
+                right_val
+            )
             ret_dval1 = loma_ir.BinaryOp(
                 loma_ir.Div(),
                 left_dval,
-                right_val,
-                lineno = node.lineno,
-                t = loma_ir.Float())
+                right_val
+            )
             ret_dval2 = loma_ir.BinaryOp(
                 loma_ir.Div(),
                 right_dval,
-                right_val,
-                lineno = node.lineno,
-                t = loma_ir.Float())
+                right_val
+            )
             ret_dval3 = loma_ir.BinaryOp(
                 loma_ir.Mul(),
                 ret_val,
-                ret_dval2,
-                lineno = node.lineno,
-                t = loma_ir.Float())
+                ret_dval2
+            )
             ret_dval = loma_ir.BinaryOp(
                 loma_ir.Sub(),
                 ret_dval1,
-                ret_dval3,
-                lineno=node.lineno,
-                t=loma_ir.Float()
+                ret_dval3
             )
-            return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
+            match node.t:
+                case loma_ir.Int():
+                    return ret_val
+                case loma_ir.ConstInt():
+                    return ret_val
+                case loma_ir.ConstFloat():
+                    return loma_ir.Call('make__dfloat', [ret_val, loma_ir.ConstFloat(0)])
+                case _:
+                    return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
 
         def mutate_call(self, node):
             # HW1: TODO
             match node.id:
                 case 'sin':
-                    angle_val = loma_ir.StructAccess(node.args[0], 'val')
-                    angle_dval = loma_ir.StructAccess(node.args[0], 'dval')
+                    angle_val = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'val'))
+                    angle_dval = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'dval'))
                     ret_val = loma_ir.Call('sin', [angle_val])
                     ret_dval1 = loma_ir.Call('cos', [angle_val])
-                    ret_dval2 = loma_ir.BinaryOp(
+                    ret_dval = loma_ir.BinaryOp(
                         loma_ir.Mul(),
                         angle_dval,
-                        ret_dval1,
-                        lineno=node.lineno,
-                        t=loma_ir.Float())
-                    return loma_ir.Call('make__dfloat', [ret_val, ret_dval2])
+                        ret_dval1)
+                    match node.t:
+                        case loma_ir.Int():
+                            return ret_val
+                        case loma_ir.ConstInt():
+                            return ret_val
+                        case loma_ir.ConstFloat():
+                            return loma_ir.Call('make__dfloat', [ret_val, loma_ir.ConstFloat(0)])
+                        case _:
+                            return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
                 case 'cos':
-                    angle_val = loma_ir.StructAccess(node.args[0], 'val')
-                    angle_dval = loma_ir.StructAccess(node.args[0], 'dval')
+                    angle_val = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'val'))
+                    angle_dval = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'dval'))
                     ret_val = loma_ir.Call('cos', [angle_val])
                     ret_dval1 = loma_ir.Call('sin', [angle_val])
                     ret_dval2 = loma_ir.BinaryOp(
                         loma_ir.Mul(),
                         angle_dval,
-                        ret_dval1,
-                        lineno=node.lineno,
-                        t=loma_ir.Float())
-                    ret_dval3 = loma_ir.BinaryOp(
+                        ret_dval1)
+                    ret_dval = loma_ir.BinaryOp(
                         loma_ir.Sub(),
                         loma_ir.ConstFloat(0.0),
-                        ret_dval2,
-                        lineno=node.lineno,
-                        t=loma_ir.Float()
+                        ret_dval2
                     )
-                    return loma_ir.Call('make__dfloat', [ret_val, ret_dval3])
+                    match node.t:
+                        case loma_ir.Int():
+                            return ret_val
+                        case loma_ir.ConstInt():
+                            return ret_val
+                        case loma_ir.ConstFloat():
+                            return loma_ir.Call('make__dfloat', [ret_val, loma_ir.ConstFloat(0)])
+                        case _:
+                            return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
                 case 'sqrt':
-                    in_val = loma_ir.StructAccess(node.args[0], 'val')
-                    in_dval = loma_ir.StructAccess(node.args[0], 'dval')
+                    in_val = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'val'))
+                    in_dval = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'dval'))
                     ret_val = loma_ir.Call('sqrt', [in_val])
-                    ret_dval1 = loma_ir.BinaryOp(
+                    ret_dval = loma_ir.BinaryOp(
                         loma_ir.Div(),
                         in_dval,
                         loma_ir.BinaryOp(
                             loma_ir.Mul(),
                             loma_ir.ConstFloat(2.0),
-                            ret_val,
-                            lineno=node.lineno,
-                            t=loma_ir.Float()),
-                        lineno=node.lineno,
-                        t=loma_ir.Float())
-                    return loma_ir.Call('make__dfloat', [ret_val, ret_dval1])
+                            ret_val
+                            )
+                        )
+                    match node.t:
+                        case loma_ir.Int():
+                            return ret_val
+                        case loma_ir.ConstInt():
+                            return ret_val
+                        case loma_ir.ConstFloat():
+                            return loma_ir.Call('make__dfloat', [ret_val, loma_ir.ConstFloat(0)])
+                        case _:
+                            return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
                 case 'pow':
-                    base_val = loma_ir.StructAccess(node.args[0], 'val')
-                    base_dval = loma_ir.StructAccess(node.args[0], 'dval')
-                    exp_val = loma_ir.StructAccess(node.args[1], 'val')
-                    exp_dval = loma_ir.StructAccess(node.args[1], 'dval')
+                    base_val = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'val'))
+                    base_dval = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'dval'))
+                    exp_val = self.mutate_struct_access(loma_ir.StructAccess(node.args[1], 'val'))
+                    exp_dval = self.mutate_struct_access(loma_ir.StructAccess(node.args[1], 'dval'))
                     ret_val = loma_ir.Call('pow', [base_val, exp_val])
                     ret_dval1 = loma_ir.BinaryOp(
                         loma_ir.Mul(),
@@ -314,15 +346,9 @@ def forward_diff(diff_func_id : str,
                             loma_ir.BinaryOp(
                                 loma_ir.Div(),
                                 exp_val,
-                                base_val,
-                                lineno=node.lineno,
-                                t=loma_ir.Float()
-                            ),
-                            lineno=node.lineno,
-                            t=loma_ir.Float()
-                        ),
-                        lineno=node.lineno,
-                        t=loma_ir.Float()
+                                base_val
+                            )
+                        )
                     )
 
                     ret_dval2 = loma_ir.BinaryOp(
@@ -331,50 +357,65 @@ def forward_diff(diff_func_id : str,
                         loma_ir.BinaryOp(
                             loma_ir.Mul(),
                             ret_val,
-                            loma_ir.Call('log', [base_val]),
-                            lineno=node.lineno,
-                            t=loma_ir.Float()
-                        ),
-                        lineno=node.lineno,
-                        t=loma_ir.Float()
+                            loma_ir.Call('log', [base_val])
+                        )
                     )
 
-                    ret_dval3 = loma_ir.BinaryOp(
+                    ret_dval = loma_ir.BinaryOp(
                             loma_ir.Add(),
                             ret_dval1,
-                            ret_dval2,
-                            lineno=node.lineno,
-                            t=loma_ir.Float()
+                            ret_dval2
                         )
-                    return loma_ir.Call('make__dfloat', [ret_val, ret_dval3])
+                    match node.t:
+                        case loma_ir.Int():
+                            return ret_val
+                        case loma_ir.ConstInt():
+                            return ret_val
+                        case loma_ir.ConstFloat():
+                            return loma_ir.Call('make__dfloat', [ret_val, loma_ir.ConstFloat(0)])
+                        case _:
+                            return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
                 case 'exp':
-                    in_val = loma_ir.StructAccess(node.args[0], 'val')
-                    in_dval = loma_ir.StructAccess(node.args[0], 'dval')
+                    in_val = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'val'))
+                    in_dval = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'dval'))
                     ret_val = loma_ir.Call('exp', [in_val])
-                    ret_dval1 = loma_ir.BinaryOp(
+                    ret_dval = loma_ir.BinaryOp(
                         loma_ir.Mul(),
                         in_dval,
-                        ret_val,
-
-                        lineno=node.lineno,
-                        t=loma_ir.Float())
-                    return loma_ir.Call('make__dfloat', [ret_val, ret_dval1])
+                        ret_val
+                    )
+                    match node.t:
+                        case loma_ir.Int():
+                            return ret_val
+                        case loma_ir.ConstInt():
+                            return ret_val
+                        case loma_ir.ConstFloat():
+                            return loma_ir.Call('make__dfloat', [ret_val, loma_ir.ConstFloat(0)])
+                        case _:
+                            return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
                 case 'log':
-                    in_val = loma_ir.StructAccess(node.args[0], 'val')
-                    in_dval = loma_ir.StructAccess(node.args[0], 'dval')
+                    in_val = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'val'))
+                    in_dval = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'dval'))
                     ret_val = loma_ir.Call('log', [in_val])
-                    ret_dval1 = loma_ir.BinaryOp(
+                    ret_dval = loma_ir.BinaryOp(
                         loma_ir.Div(),
                         in_dval,
-                        in_val,
-                        lineno=node.lineno,
-                        t=loma_ir.Float())
-                    return loma_ir.Call('make__dfloat', [ret_val, ret_dval1])
+                        in_val
+                        )
+                    match node.t:
+                        case loma_ir.Int():
+                            return ret_val
+                        case loma_ir.ConstInt():
+                            return ret_val
+                        case loma_ir.ConstFloat():
+                            return loma_ir.Call('make__dfloat', [ret_val, loma_ir.ConstFloat(0)])
+                        case _:
+                            return loma_ir.Call('make__dfloat', [ret_val, ret_dval])
                 case 'int2float':
                     return loma_ir.Call('make__dfloat', [node.args[0], loma_ir.ConstFloat(0.0)])
                 case 'float2int':
                     arg = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'val'))
-                    return loma_ir.Call('float2int', [arg])
+                    return loma_ir.Call('float2int', [arg], lineno=node.lineno, t=loma_ir.Int())
                 case _:
                     return super().mutate_call(node)
 
