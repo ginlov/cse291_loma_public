@@ -454,19 +454,19 @@ class Homework2Test(unittest.TestCase):
     #     # -> y * x * 6 * x
     #     assert abs(_dx.value - dout * (2 * 6 * 3 * x)) < epsilon
 
-    # def test_array_output(self):
-    #     with open('loma_code/array_output.py') as f:
-    #         structs, lib = compiler.compile(f.read(),
-    #                                         target = 'c',
-    #                                         output_filename = '_code/array_output')
-    #     x = 0.7
-    #     _dx = ctypes.c_float(0)
-    #     py_y = [0.0, 0.0]
-    #     y = (ctypes.c_float * len(py_y))(*py_y)
-    #     py_dy = [0.3, 0.5]
-    #     _dy = (ctypes.c_float * len(py_dy))(*py_dy)
-    #     lib.d_array_output(x, _dx, _dy)
-    #     assert abs(_dx.value - (0.3 * 2 * x + 0.5 * 3 * x * x)) < epsilon
+    def test_array_output(self):
+        with open('loma_code/array_output.py') as f:
+            structs, lib = compiler.compile(f.read(),
+                                            target = 'c',
+                                            output_filename = '_code/array_output')
+        x = 0.7
+        _dx = ctypes.c_float(0)
+        py_y = [0.0, 0.0]
+        y = (ctypes.c_float * len(py_y))(*py_y)
+        py_dy = [0.3, 0.5]
+        _dy = (ctypes.c_float * len(py_dy))(*py_dy)
+        lib.d_array_output(x, _dx, _dy)
+        assert abs(_dx.value - (0.3 * 2 * x + 0.5 * 3 * x * x)) < epsilon
 
     # def test_array_input(self):
     #     with open('loma_code/array_input.py') as f:
