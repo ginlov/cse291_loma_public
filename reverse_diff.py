@@ -233,27 +233,55 @@ def reverse_diff(diff_func_id : str,
     # HW2 happens here. Modify the following IR mutators to perform
     # reverse differentiation.
     class ForwardPassMutator(irmutator.IRMutator):
+        def compute_stack_size(self, node):
+            float_size = 0
+            int_size = 0
+            def visit_target(target):
+                stack_float_size = 0
+                stack_int_size = 0
+                match target.t:
+                    case loma_ir.Float():
+                        return [1, 0]
+                    case loma_ir.Int():
+                        return [0, 1]
+                    case loma_ir.Array():
+                        for i in range(target.t.static_size):
+                            f, i = visit_target(loma_ir.ArrayAccess(target, i))
+                            stack_float_size += f
+                            stack_int_size += i
+                        return [stack_float_size, stack_int_size]
+                    case loma_ir.Struct():
+                        for i in target.t.members:
+                            f, i = visit_target(loma_ir.StructAccess(target, i.id))
+                            stack_float_size += f
+                            stack_int_size += i
+                        return [stack_float_size, stack_int_size]
+                    case _:
+                        return [0, 0]
+            for stmt in node.body:
+                match stmt:
+                    case loma_ir.Assign():
+                        target = stmt.target
+                        f, i = visit_target(target)
+                        float_size += f
+                        int_size += i
+                    case _:
+                        continue
+            return [float_size, int_size]
+
         def mutate_body(self, node):
             new_body = []
             self.ret_type = node.ret_type
             self.arg_id_to_diff_id = {}
-            for arg in node.args:
-                if arg.i == loma_ir.Out():
-                    new_body.append(
-                        loma_ir.Declare(
-                            arg.id,
-                            arg.t
-                        )
-                    )
-            stack_float_size = 0
-            stack_int_size = 0
+            stack_float_size, stack_int_size = self.compute_stack_size(node)
+            self.output_args = [arg.id for arg in node.args if arg.i == loma_ir.Out()]
             for stmt in node.body:
-                if isinstance(stmt, loma_ir.Assign):
-                    target = stmt.target
-                    if target.t == loma_ir.Float():
-                        stack_float_size += 1
-                    elif target.t == loma_ir.Int():
-                        stack_int_size += 1
+                # if isinstance(stmt, loma_ir.Assign):
+                #     target = stmt.target
+                #     if target.t == loma_ir.Float():
+                #         stack_float_size += 1
+                #     elif target.t == loma_ir.Int():
+                #         stack_int_size += 1
                 new_body.append(self.mutate_stmt(stmt))
             stack_float_init = loma_ir.Declare(
                 '_t_float',
@@ -282,13 +310,23 @@ def reverse_diff(diff_func_id : str,
 
         def mutate_declare(self, node):
             self.arg_id_to_diff_id[node.target] = '_d' + node.target + '_' + random_id_generator()
-            new_stmt = loma_ir.Declare(
-                self.arg_id_to_diff_id[node.target],
-                node.t
-            )
+            match node.t:
+                case loma_ir.Struct():
+                        new_stmt = loma_ir.Declare(
+                        self.arg_id_to_diff_id[node.target],
+                        loma_ir.Struct(node.t.id, node.t.members)
+                    )
+                case _:
+                    new_stmt = loma_ir.Declare(
+                        self.arg_id_to_diff_id[node.target],
+                        node.t
+                    )
             return [node, new_stmt]
 
         def mutate_assign(self, node):
+
+            if check_lhs_is_output_args(node.target, self.output_args):
+                return []
             if node.target.t == loma_ir.Float():
                 add_to_stack = loma_ir.Assign(
                     loma_ir.ArrayAccess(
@@ -321,6 +359,7 @@ def reverse_diff(diff_func_id : str,
                         loma_ir.ConstInt(1)
                     )
                 )
+                
             return [add_to_stack, update_stack_ptr, node]
 
         def mutate_ifelse(self, node):
@@ -375,6 +414,7 @@ def reverse_diff(diff_func_id : str,
             # Mutate arguments
             self.arg_id_to_diff_id = {}
             new_args = []
+            self.output_args = [arg.id for arg in node.args if arg.i == loma_ir.Out()]
             for arg in node.args:
                 if arg.i == loma_ir.In():
                     new_args.append(arg)
@@ -405,8 +445,6 @@ def reverse_diff(diff_func_id : str,
             # Mutate body
             new_body = irmutator.flatten([self.mutate_stmt(stmt) for stmt in reversed(node.body)])
             new_body = forward_body + new_body
-            for stmt in new_body:
-                print(stmt)
             # New function
             new_node = loma_ir.FunctionDef(
                 diff_func_id,
@@ -435,7 +473,7 @@ def reverse_diff(diff_func_id : str,
         def mutate_assign(self, node):
             # HW2: TODO
             new_stmts = []
-            if node.target.id in self.arg_id_to_diff_id:
+            if not check_lhs_is_output_args(node.target, self.output_args):
                 if node.target.t == loma_ir.Float():
                     new_stmts.append(loma_ir.Assign(
                         loma_ir.Var('_stack_ptr_float'),
@@ -447,7 +485,7 @@ def reverse_diff(diff_func_id : str,
                     ))
                     new_stmts.append(
                         loma_ir.Assign(
-                            loma_ir.Var(node.target.id),
+                            node.target,
                             loma_ir.ArrayAccess(
                                 loma_ir.Var('_t_float'),
                                 loma_ir.Var('_stack_ptr_float')
@@ -465,32 +503,46 @@ def reverse_diff(diff_func_id : str,
                     ))
                     new_stmts.append(
                         loma_ir.Assign(
-                            loma_ir.Var(node.target.id),
+                            node.target,
                             loma_ir.ArrayAccess(
                                 loma_ir.Var('_t_int'),
                                 loma_ir.Var('_stack_ptr_int')
                             )
                         )
                     )
-                temp_str_name = '_d' + node.target.id + '_' + random_id_generator()
-                new_stmts.append(loma_ir.Declare(
-                    temp_str_name,
-                    node.target.t,
-                    loma_ir.Var(self.arg_id_to_diff_id[node.target.id])
+                    
+            match node.target:
+                case loma_ir.ArrayAccess():
+                    array_name = node.target.array.id
+                    temp_str_name = '_d' + array_name + '_' + random_id_generator()
+                    target_ditem = loma_ir.ArrayAccess(loma_ir.Var(self.arg_id_to_diff_id[array_name]), node.target.index)
+                case loma_ir.StructAccess():
+                    struct_name = node.target.struct.id
+                    temp_str_name = '_d' + struct_name + '_' + random_id_generator()
+                    target_ditem = loma_ir.StructAccess(loma_ir.Var(self.arg_id_to_diff_id[struct_name]), node.target.member_id)
+                case loma_ir.Var():
+                    temp_str_name = '_d' + node.target.id + '_' + random_id_generator()
+                    target_ditem = loma_ir.Var(self.arg_id_to_diff_id[node.target.id])
+            
+            new_stmts.append(loma_ir.Declare(
+                temp_str_name,
+                node.target.t,
+                target_ditem
+            ))
+            self.adj = loma_ir.Var(temp_str_name)
+            
+            if node.target.t == loma_ir.Float():
+                new_stmts.append(loma_ir.Assign(
+                    target_ditem,
+                    loma_ir.ConstFloat(0.0)
                 ))
-                self.adj = loma_ir.Var(temp_str_name)
-                if node.target.t == loma_ir.Float():
-                    new_stmts.append(loma_ir.Assign(
-                        loma_ir.Var(self.arg_id_to_diff_id[node.target.id]),
-                        loma_ir.ConstFloat(0.0)
-                    ))
-                elif node.target.t == loma_ir.Int():
-                    new_stmts.append(loma_ir.Assign(
-                        loma_ir.Var(self.arg_id_to_diff_id[node.target.id]),
-                        loma_ir.ConstInt(0)
-                    ))
-                expr = node.val
-                new_stmts.append(self.mutate_expr(expr))
+            elif node.target.t == loma_ir.Int():
+                new_stmts.append(loma_ir.Assign(
+                    target_ditem,
+                    loma_ir.ConstInt(0)
+                ))
+            expr = node.val
+            new_stmts.append(self.mutate_expr(expr))
             return new_stmts
 
         def mutate_ifelse(self, node):
@@ -515,8 +567,17 @@ def reverse_diff(diff_func_id : str,
 
         def mutate_var(self, node):
             # HW2: TODO
+            match node.t:
+                case loma_ir.Struct():
+                    derive_struct = loma_ir.Var(
+                        self.arg_id_to_diff_id[node.id],
+                        node.lineno,
+                        node.t
+                    )
+                    return accum_deriv(derive_struct, self.adj, False)
+
             if node.id in self.arg_id_to_diff_id and node.t != loma_ir.Int():
-                new_stmt = new_stmt = loma_ir.Assign(\
+                new_stmt = loma_ir.Assign(\
                     loma_ir.Var(self.arg_id_to_diff_id[node.id]),
                     loma_ir.BinaryOp(
                         loma_ir.Add(),
@@ -527,11 +588,35 @@ def reverse_diff(diff_func_id : str,
 
         def mutate_array_access(self, node):
             # HW2: TODO
-            return super().mutate_array_access(node)
+            array_name = node.array.id
+            if node.array.t != loma_ir.Int():
+                new_stmt = loma_ir.Assign(
+                    loma_ir.ArrayAccess(loma_ir.Var(self.arg_id_to_diff_id[array_name]), node.index),
+                    loma_ir.BinaryOp(
+                        loma_ir.Add(),
+                        loma_ir.ArrayAccess(loma_ir.Var(self.arg_id_to_diff_id[array_name]), node.index), self.adj
+                    )
+                )
+                return [new_stmt]
+            return []
 
         def mutate_struct_access(self, node):
             # HW2: TODO
-            return super().mutate_struct_access(node)
+            struct_name = node.struct.id
+            if node.t != loma_ir.Int():
+                new_stmt = loma_ir.Assign(
+                    loma_ir.StructAccess(
+                        loma_ir.Var(self.arg_id_to_diff_id[struct_name]), node.member_id
+                    ),
+                    loma_ir.BinaryOp(
+                        loma_ir.Add(),
+                        loma_ir.StructAccess(
+                        loma_ir.Var(self.arg_id_to_diff_id[struct_name]), node.member_id
+                    ), self.adj
+                    )
+                )
+                return [new_stmt]
+            return []
 
         def mutate_add(self, node):
             left_node = node.left
@@ -542,7 +627,6 @@ def reverse_diff(diff_func_id : str,
 
         def mutate_sub(self, node):
             # HW2: TODO
-            print('RUN HERE')
             left_node = node.left
             right_node = node.right
             left_stmt = self.mutate_expr(left_node)
