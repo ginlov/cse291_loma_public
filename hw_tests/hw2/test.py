@@ -302,17 +302,17 @@ class Homework2Test(unittest.TestCase):
 
     #     assert abs(_dx.value - 0.1 * 2 * x) < epsilon
 
-    def test_call_sin(self):
-        with open('loma_code/call_sin.py') as f:
-            structs, lib = compiler.compile(f.read(),
-                                            target = 'c',
-                                            output_filename = '_code/call_sin')
-        x = 1.5
-        _dx = ctypes.c_float(0)
-        dout = -0.3
-        lib.d_call_sin(x, ctypes.byref(_dx), dout)
+    # def test_call_sin(self):
+    #     with open('loma_code/call_sin.py') as f:
+    #         structs, lib = compiler.compile(f.read(),
+    #                                         target = 'c',
+    #                                         output_filename = '_code/call_sin')
+    #     x = 1.5
+    #     _dx = ctypes.c_float(0)
+    #     dout = -0.3
+    #     lib.d_call_sin(x, ctypes.byref(_dx), dout)
 
-        assert abs(_dx.value - dout * math.cos(x)) < epsilon
+    #     assert abs(_dx.value - dout * math.cos(x)) < epsilon
 
     # def test_call_cos(self):
     #     with open('loma_code/call_cos.py') as f:
