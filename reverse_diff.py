@@ -564,15 +564,116 @@ def reverse_diff(diff_func_id : str,
                     self.adj = org_adj
                     return [new_stmt]
                 case 'cos':
-                    pass
+                    expr = node.args[0]
+                    org_adj = self.adj
+                    self.adj = loma_ir.BinaryOp(
+                        loma_ir.Mul(),
+                        loma_ir.BinaryOp(
+                            loma_ir.Mul(),
+                            org_adj,
+                            loma_ir.Call(
+                            'sin',
+                            node.args
+                            )
+                        ),
+                        loma_ir.ConstFloat(-1.0)
+                    )
+                    new_stmt = self.mutate_expr(expr)
+                    self.adj = org_adj
+                    return [new_stmt]
                 case 'sqrt':
-                    pass
+                    expr = node.args[0]
+                    org_adj = self.adj
+                    self.adj = loma_ir.BinaryOp(
+                        loma_ir.Div(),
+                        org_adj,
+                        loma_ir.BinaryOp(
+                            loma_ir.Mul(),
+                            loma_ir.ConstFloat(2.0),
+                            loma_ir.Call(
+                                'sqrt',
+                                node.args
+                            )
+                        )
+                    )
+                    new_stmt = self.mutate_expr(expr)
+                    self.adj = org_adj
+                    return [new_stmt]
                 case 'exp':
-                    pass
+                    expr = node.args[0]
+                    org_adj = self.adj
+                    self.adj = loma_ir.BinaryOp(
+                        loma_ir.Mul(),
+                        org_adj,
+                        loma_ir.Call(
+                                'exp',
+                                node.args
+                            )
+                    )
+                    new_stmt = self.mutate_expr(expr)
+                    self.adj = org_adj
+                    return [new_stmt]
                 case 'pow':
-                    pass
+                    x = node.args[0]
+                    y = node.args[1]
+                    org_adj = self.adj
+                    self.adj = loma_ir.BinaryOp(
+                        loma_ir.Mul(),
+                        org_adj,
+                        loma_ir.BinaryOp(
+                            loma_ir.Mul(),
+                            y,
+                            loma_ir.Call(
+                                'pow',
+                                [
+                                    x,
+                                    loma_ir.BinaryOp(
+                                        loma_ir.Sub(),
+                                        y,
+                                        loma_ir.ConstFloat(1.0)
+                                    )
+                                ]
+                            )
+                        )
+                    )
+                    x_stmt = self.mutate_expr(x)
+                    self.adj = org_adj
+
+                    org_adj = self.adj
+                    self.adj = loma_ir.BinaryOp(
+                        loma_ir.Mul(),
+                        org_adj,
+                        loma_ir.BinaryOp(
+                            loma_ir.Mul(),
+                            loma_ir.Call(
+                                'pow',
+                                [
+                                    x,
+                                    y
+                                ]
+                            ),
+                            loma_ir.Call(
+                                'log',
+                                [
+                                    x
+                                ]
+                            )
+                        )
+                    )
+                    y_stmt = self.mutate_expr(y)
+                    self.adj = org_adj
+                    return [x_stmt, y_stmt]
                 case 'log':
-                    pass
+                    expr = node.args[0]
+                    org_adj = self.adj
+                    self.adj = loma_ir.BinaryOp(
+                        loma_ir.Div(),
+                        org_adj,
+                        expr
+                    )
+                    new_stmt = self.mutate_expr(expr)
+                    self.adj = org_adj
+                    return [new_stmt]
                 case 'int2float':
                     pass
                 case 'float2int':
