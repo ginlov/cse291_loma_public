@@ -239,29 +239,42 @@ def reverse_diff(diff_func_id : str,
             def visit_target(target):
                 stack_float_size = 0
                 stack_int_size = 0
-                match target.t:
-                    case loma_ir.Float():
-                        return [1, 0]
-                    case loma_ir.Int():
-                        return [0, 1]
-                    case loma_ir.Array():
-                        for i in range(target.t.static_size):
-                            f, i = visit_target(loma_ir.ArrayAccess(target, i))
-                            stack_float_size += f
-                            stack_int_size += i
-                        return [stack_float_size, stack_int_size]
-                    case loma_ir.Struct():
-                        for i in target.t.members:
-                            f, i = visit_target(loma_ir.StructAccess(target, i.id))
-                            stack_float_size += f
-                            stack_int_size += i
+                match target:
+                    case loma_ir.StructAccess():
+                        members = target.struct.t.members
+                        for mem in members:
+                            if mem.id == target.member_id:
+                                f, i = visit_target(mem)
+                                stack_float_size += f
+                                stack_int_size += i
+                                break
                         return [stack_float_size, stack_int_size]
                     case _:
-                        return [0, 0]
+                        match target.t:
+                            case loma_ir.Float():
+                                return [1, 0]
+                            case loma_ir.Int():
+                                return [0, 1]
+                            case loma_ir.Array():
+                                for i in range(target.t.static_size):
+                                    f, i = visit_target(loma_ir.ArrayAccess(target, i))
+                                    stack_float_size += f
+                                    stack_int_size += i
+                                return [stack_float_size, stack_int_size]
+                            case loma_ir.Struct():
+                                for i in target.t.members:
+                                    f, i = visit_target(i)
+                                    stack_float_size += f
+                                    stack_int_size += i
+                                return [stack_float_size, stack_int_size]
+                            case _:
+                                return [0, 0]
             for stmt in node.body:
                 match stmt:
                     case loma_ir.Assign():
                         target = stmt.target
+                        if visit_target(target) == None:
+                            print(target)
                         f, i = visit_target(target)
                         float_size += f
                         int_size += i
@@ -327,40 +340,94 @@ def reverse_diff(diff_func_id : str,
 
             if check_lhs_is_output_args(node.target, self.output_args):
                 return []
-            if node.target.t == loma_ir.Float():
-                add_to_stack = loma_ir.Assign(
-                    loma_ir.ArrayAccess(
-                        loma_ir.Var('_t_float'),
-                        loma_ir.Var('_stack_ptr_float')
-                    ),
-                    node.target
-                )
-                update_stack_ptr = loma_ir.Assign(
-                    loma_ir.Var('_stack_ptr_float'),
-                    loma_ir.BinaryOp(
-                        loma_ir.Add(),
+            new_stmts = []
+            match node.target.t:
+                case loma_ir.Float():
+                    new_stmts += [loma_ir.Assign(
+                        loma_ir.ArrayAccess(
+                            loma_ir.Var('_t_float'),
+                            loma_ir.Var('_stack_ptr_float')
+                        ),
+                        node.target
+                    )]
+                    new_stmts += [loma_ir.Assign(
                         loma_ir.Var('_stack_ptr_float'),
-                        loma_ir.ConstInt(1)
-                    )
-                )
-            elif node.target.t == loma_ir.Int():
-                add_to_stack = loma_ir.Assign(
-                    loma_ir.ArrayAccess(
-                        loma_ir.Var('_t_int'),
-                        loma_ir.Var('_stack_ptr_int')
-                    ),
-                    node.target
-                )
-                update_stack_ptr = loma_ir.Assign(
-                    loma_ir.Var('_stack_ptr_int'),
-                    loma_ir.BinaryOp(
-                        loma_ir.Add(),
+                        loma_ir.BinaryOp(
+                            loma_ir.Add(),
+                            loma_ir.Var('_stack_ptr_float'),
+                            loma_ir.ConstInt(1)
+                        )
+                    )]
+                case loma_ir.Int():
+                    new_stmts += [loma_ir.Assign(
+                        loma_ir.ArrayAccess(
+                            loma_ir.Var('_t_int'),
+                            loma_ir.Var('_stack_ptr_int')
+                        ),
+                        node.target
+                    )]
+                    new_stmts += [loma_ir.Assign(
                         loma_ir.Var('_stack_ptr_int'),
-                        loma_ir.ConstInt(1)
-                    )
-                )
-                
-            return [add_to_stack, update_stack_ptr, node]
+                        loma_ir.BinaryOp(
+                            loma_ir.Add(),
+                            loma_ir.Var('_stack_ptr_int'),
+                            loma_ir.ConstInt(1)
+                        )
+                    )]
+                case loma_ir.Struct():
+                    for member in node.target.t.members:
+                        member_id = member.id
+                        if member.t == loma_ir.Int():
+                            new_stmts.append(
+                                loma_ir.Assign(
+                                    loma_ir.ArrayAccess(
+                                    loma_ir.Var('_t_int'),
+                                    loma_ir.Var('_stack_ptr_int')
+                                ),
+                                    loma_ir.StructAccess(
+                                        node.target,
+                                        member_id,
+                                        None,
+                                        member.t
+                                    )
+                                )
+                            )
+                            new_stmts.append(
+                                    loma_ir.Assign(
+                                        loma_ir.Var('_stack_ptr_int'),
+                                        loma_ir.BinaryOp(
+                                            loma_ir.Add(),
+                                            loma_ir.Var('_stack_ptr_int'),
+                                            loma_ir.ConstInt(1)
+                                        )
+                                    )
+                            )
+                        elif member.t == loma_ir.Float():
+                            new_stmts.append(
+                                loma_ir.Assign(
+                                    loma_ir.ArrayAccess(
+                                    loma_ir.Var('_t_float'),
+                                    loma_ir.Var('_stack_ptr_float')
+                                ),
+                                    loma_ir.StructAccess(
+                                        node.target,
+                                        member_id,
+                                        None,
+                                        member.t
+                                    )
+                                )
+                            )
+                            new_stmts.append(
+                                    loma_ir.Assign(
+                                        loma_ir.Var('_stack_ptr_float'),
+                                        loma_ir.BinaryOp(
+                                            loma_ir.Add(),
+                                            loma_ir.Var('_stack_ptr_float'),
+                                            loma_ir.ConstInt(1)
+                                        )
+                                    )
+                            )
+            return new_stmts + [node]
 
         def mutate_ifelse(self, node):
             return [node]
@@ -474,42 +541,90 @@ def reverse_diff(diff_func_id : str,
             # HW2: TODO
             new_stmts = []
             if not check_lhs_is_output_args(node.target, self.output_args):
-                if node.target.t == loma_ir.Float():
-                    new_stmts.append(loma_ir.Assign(
-                        loma_ir.Var('_stack_ptr_float'),
-                        loma_ir.BinaryOp(
-                            loma_ir.Sub(),
+                match node.target.t:
+                    case loma_ir.Float():
+                        new_stmts.append(loma_ir.Assign(
                             loma_ir.Var('_stack_ptr_float'),
-                            loma_ir.ConstInt(1)
-                        )
-                    ))
-                    new_stmts.append(
-                        loma_ir.Assign(
-                            node.target,
-                            loma_ir.ArrayAccess(
-                                loma_ir.Var('_t_float'),
-                                loma_ir.Var('_stack_ptr_float')
+                            loma_ir.BinaryOp(
+                                loma_ir.Sub(),
+                                loma_ir.Var('_stack_ptr_float'),
+                                loma_ir.ConstInt(1)
+                            )
+                        ))
+                        new_stmts.append(
+                            loma_ir.Assign(
+                                node.target,
+                                loma_ir.ArrayAccess(
+                                    loma_ir.Var('_t_float'),
+                                    loma_ir.Var('_stack_ptr_float')
+                                )
                             )
                         )
-                    )
-                elif node.target.t == loma_ir.Int():
-                    new_stmts.append(loma_ir.Assign(
-                        loma_ir.Var('_stack_ptr_int'),
-                        loma_ir.BinaryOp(
-                            loma_ir.Sub(),
+                    case loma_ir.Int():
+                        new_stmts.append(loma_ir.Assign(
                             loma_ir.Var('_stack_ptr_int'),
-                            loma_ir.ConstInt(1)
-                        )
-                    ))
-                    new_stmts.append(
-                        loma_ir.Assign(
-                            node.target,
-                            loma_ir.ArrayAccess(
-                                loma_ir.Var('_t_int'),
-                                loma_ir.Var('_stack_ptr_int')
+                            loma_ir.BinaryOp(
+                                loma_ir.Sub(),
+                                loma_ir.Var('_stack_ptr_int'),
+                                loma_ir.ConstInt(1)
+                            )
+                        ))
+                        new_stmts.append(
+                            loma_ir.Assign(
+                                node.target,
+                                loma_ir.ArrayAccess(
+                                    loma_ir.Var('_t_int'),
+                                    loma_ir.Var('_stack_ptr_int')
+                                )
                             )
                         )
-                    )
+                    case loma_ir.Struct():
+                        for mem in node.target.t.members:
+                            match mem.t:
+                                case loma_ir.Float():
+                                    new_stmts.append(loma_ir.Assign(
+                                        loma_ir.Var('_stack_ptr_float'),
+                                        loma_ir.BinaryOp(
+                                            loma_ir.Sub(),
+                                            loma_ir.Var('_stack_ptr_float'),
+                                            loma_ir.ConstInt(1)
+                                        )
+                                    ))
+                                    new_stmts.append(
+                                        loma_ir.Assign(
+                                            loma_ir.StructAccess(
+                                                node.target,
+                                                mem.id,
+                                                t=mem.t
+                                            ),
+                                            loma_ir.ArrayAccess(
+                                                loma_ir.Var('_t_float'),
+                                                loma_ir.Var('_stack_ptr_float')
+                                            )
+                                        )
+                                    )
+                                case loma_ir.Int():
+                                    new_stmts.append(loma_ir.Assign(
+                                        loma_ir.Var('_stack_ptr_int'),
+                                        loma_ir.BinaryOp(
+                                            loma_ir.Sub(),
+                                            loma_ir.Var('_stack_ptr_int'),
+                                            loma_ir.ConstInt(1)
+                                        )
+                                    ))
+                                    new_stmts.append(
+                                        loma_ir.Assign(
+                                            loma_ir.StructAccess(
+                                                node.target,
+                                                mem.id,
+                                                t=mem.t
+                                            ),
+                                            loma_ir.ArrayAccess(
+                                                loma_ir.Var('_t_int'),
+                                                loma_ir.Var('_stack_ptr_int')
+                                            )
+                                        )
+                                    )
                     
             match node.target:
                 case loma_ir.ArrayAccess():
@@ -522,13 +637,31 @@ def reverse_diff(diff_func_id : str,
                     target_ditem = loma_ir.StructAccess(loma_ir.Var(self.arg_id_to_diff_id[struct_name]), node.target.member_id)
                 case loma_ir.Var():
                     temp_str_name = '_d' + node.target.id + '_' + random_id_generator()
-                    target_ditem = loma_ir.Var(self.arg_id_to_diff_id[node.target.id])
+                    target_ditem = loma_ir.Var(self.arg_id_to_diff_id[node.target.id], lineno=node.target.lineno, t=node.target.t)
             
-            new_stmts.append(loma_ir.Declare(
-                temp_str_name,
-                node.target.t,
-                target_ditem
-            ))
+            match node.target.t:
+                case loma_ir.Struct():
+                    new_stmts.append(loma_ir.Declare(
+                        temp_str_name,
+                        node.target.t
+                    ))
+                    for mem in node.target.t.members:
+                        new_stmts.append(loma_ir.Assign(
+                            loma_ir.StructAccess(
+                                loma_ir.Var(temp_str_name, t=node.target.t),
+                                mem.id
+                            ),
+                            loma_ir.StructAccess(
+                                target_ditem,
+                                mem.id
+                            )
+                        ))
+                case _:
+                    new_stmts.append(loma_ir.Declare(
+                        temp_str_name,
+                        node.target.t,
+                        target_ditem
+                    ))
             self.adj = loma_ir.Var(temp_str_name)
             
             if node.target.t == loma_ir.Float():
@@ -588,13 +721,21 @@ def reverse_diff(diff_func_id : str,
 
         def mutate_array_access(self, node):
             # HW2: TODO
-            array_name = node.array.id
-            if node.array.t != loma_ir.Int():
+            def transform_array_access(_node):
+                match _node.array:
+                    case loma_ir.Var():
+                        array_name = _node.array.id
+                        return loma_ir.ArrayAccess(loma_ir.Var(self.arg_id_to_diff_id[array_name]), _node.index), _node.array.t
+                    case loma_ir.ArrayAccess():
+                        new_array, t = transform_array_access(_node.array)
+                        return loma_ir.ArrayAccess(new_array, _node.index), t
+            target_deriv, t = transform_array_access(node)
+            if t != loma_ir.Int():
                 new_stmt = loma_ir.Assign(
-                    loma_ir.ArrayAccess(loma_ir.Var(self.arg_id_to_diff_id[array_name]), node.index),
+                    target_deriv,
                     loma_ir.BinaryOp(
                         loma_ir.Add(),
-                        loma_ir.ArrayAccess(loma_ir.Var(self.arg_id_to_diff_id[array_name]), node.index), self.adj
+                        target_deriv, self.adj
                     )
                 )
                 return [new_stmt]
