@@ -90,7 +90,20 @@ def forward_diff(diff_func_id : str,
 
         def mutate_ifelse(self, node):
             # HW3: TODO
-            return super().mutate_ifelse(node)
+            then_stmts = irmutator.flatten([self.mutate_stmt(stmt) for stmt in node.then_stmts])
+            else_stmts = irmutator.flatten([self.mutate_stmt(stmt) for stmt in node.else_stmts])
+            new_cond = loma_ir.BinaryOp(
+                node.cond.op,
+                loma_ir.StructAccess(node.cond.left, 'val'),
+                node.cond.right
+            )
+            new_node = loma_ir.IfElse(
+                new_cond,
+                then_stmts,
+                else_stmts,
+                node.lineno
+            )
+            return new_node
 
         def mutate_while(self, node):
             # HW3: TODO
@@ -417,6 +430,12 @@ def forward_diff(diff_func_id : str,
                     arg = self.mutate_struct_access(loma_ir.StructAccess(node.args[0], 'val'))
                     return loma_ir.Call('float2int', [arg], lineno=node.lineno, t=loma_ir.Int())
                 case _:
-                    return super().mutate_call(node)
+                    fwd_id = func_to_fwd.get(node.id)
+                    if fwd_id is not None:
+                        new_args = [self.mutate_expr(arg) for arg in node.args]
+                        return loma_ir.Call(fwd_id, new_args, lineno=node.lineno)
+                    else:
+                        # If the function is not in func_to_fwd, just call it normally
+                        return super().mutate_call(node)
 
     return FwdDiffMutator().mutate_function_def(func)
